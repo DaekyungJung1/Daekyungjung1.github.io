@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI 운동 분석 및 기록 관리</title>
+    <script>
+        (function() {
+            const ua = navigator.userAgent.toLowerCase();
+            const isAndroid = /android/i.test(ua);
+            const isIos = /iphone|ipad|ipod/i.test(ua);
+            const url = window.location.href;
+
+            // 1. 안드로이드 탈출 로직 (기존 유지)
+            if (isAndroid) {
+                const isAndroidWebView = (/wv/i.test(ua) || /version\/[\d.]+/i.test(ua)) && 
+                                        (ua.indexOf('naver') !== -1 || ua.indexOf('kakaotalk') !== -1 || ua.indexOf('instagram') !== -1);
+                if (isAndroidWebView) {
+                    location.href = `intent://${url.replace(/^https?:\/\//, '')}#Intent;scheme=https;action=android.intent.action.VIEW;end`;
+                    return;
+                }
+            }
+
+            // 2. iOS 인앱 브라우저 감지 (수정됨)
+                if (isIos) {
+            // 1. 진짜 Safari인지 확인하는 핵심 조건
+            // - Safari라는 글자가 있어야 함
+            // - Version이라는 글자가 있어야 함 (인앱 브라우저나 크롬 등은 이게 빠지는 경우가 많음)
+            // - 다른 앱 식별자(naver, kakao, instagram 등)가 없어야 함
+            const isRealSafari = /safari/i.test(ua) && 
+                                /version/i.test(ua) && 
+                                !/naver|kakaotalk|instagram|line|fbav|fban|puffin|fios|tistory/i.test(ua);
+
+            // 2. 크롬이나 다른 정식 브라우저는 통과시켜주고 싶다면?
+            const isOtherFullBrowser = /crios|fxios|optios|edgios/i.test(ua); // 크롬, 파이어폭스, 오페라, 엣지(iOS용)
+
+            // 정식 브라우저가 아니라면 안내창 띄우기
+            if (!isRealSafari && !isOtherFullBrowser) {
+                if (document.readyState === 'loading') {
+                    window.addEventListener('DOMContentLoaded', showIosGuide);
+                } else {
+                    showIosGuide();
+                }
+            }
+        }
+        })();
+
+        // 아이폰 유저를 위한 안내창 생성 함수
+        function showIosGuide() {
+            const guide = document.createElement('div');
+            guide.id = 'ios-guide-overlay';
+            guide.style = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.92); z-index: 999999;
+                display: flex; flex-direction: column; justify-content: center; align-items: center;
+                color: white; text-align: center; font-family: -apple-system, sans-serif;
+            `;
+            
+            guide.innerHTML = `
+                <div style="background: #222; padding: 30px; border-radius: 20px; border: 1px solid #2ed573; max-width: 85%;">
+                    <h2 style="color: #2ed573; margin-top: 0; font-size: 20px;">📢 구글 로그인 안내</h2>
+                    <p style="font-size: 14px; line-height: 1.6; color: #ccc;">
+                        아이폰 보안 정책으로 인해 앱 내부 브라우저에서는 구글 로그인이 차단됩니다.
+                    </p>
+                    <div style="margin: 20px 0; padding: 15px; background: #333; border-radius: 12px;">
+                        <p style="margin: 0; font-size: 13px; color: #fff;">하단 <b>공유 버튼(□↑)</b>을 누른 뒤</p>
+                        <p style="margin: 8px 0 0; font-size: 16px; color: #2ed573; font-weight: bold;">'Safari로 열기'</p>
+                    </div>
+                    <button onclick="document.getElementById('ios-guide-overlay').remove()" 
+                        style="background: #444; color: white; border: none; padding: 12px 20px; border-radius: 10px; cursor: pointer; font-size: 14px;">
+                        닫기
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(guide);
+        }
+    </script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        /* 1. 가장 상단에 @font-face를 선언합니다. */
+        @font-face {
+            font-family: 'Gameplay'; /* 내가 부를 이름 */
+            src: url('fonts/Gameplay.woff2') format('woff2'); /* 폰트 파일 경로 */
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        /* 2. 기존 body 스타일은 유지 (전체 폰트 방해 금지) */
+        body { 
+            letter-spacing: -0.03em; /* 자간 조절 */
+            word-break: keep-all;    /* 단어 단위 줄바꿈으로 가독성 향상 */
+            text-align: center; 
+            font-family: sans-serif; 
+            background: #111; 
+            color: white; 
+            margin: 0; 
+            padding: 0; 
+        }
+
+        /* 3. h1 태그에만 해당 폰트 적용 */
+        h1 {
+            font-family: 'Gameplay', sans-serif !important;
+            font-size: 42px; /* 폰트에 따라 크기가 작아 보일 수 있으니 조절하세요 */
+            letter-spacing: 1px; /* 영문 폰트라면 자간을 조금 넓히면 더 예쁩니다 */
+        }
+        /* [기본 스타일] */
+        body { text-align: center; font-family: sans-serif; background: #111; color: white; margin: 0; padding: 20px; -webkit-text-size-adjust: none; }
+        .login-section { margin-top: 38px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+        .user-info { font-size: 16px; color: #2ed573; font-weight: bold; min-height: 20px; margin-bottom: 25px; align-items: center; /* 자식 요소들을 가로 중앙으로 정렬 */}
+        video { width: 100%; max-width: 500px; border-radius: 15px; background: #333; margin-top: 20px; }
+        .btn-group { display: flex; justify-content: center; gap: 10px; margin-top: 15px; max-width: 500px; margin-left: auto; margin-right: auto; }
+        .main-btn { padding: 14px; border-radius: 12px; border: none; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.3s; flex: 1; }
+        
+        /* [메뉴 및 기타 뷰 숨김 설정] */
+        #mainMenuView, #cameraView, #loadingView, #resultView, #historyView { display: none; }
+        
+        
+        /* [달력 및 리포트 스타일 - 기존 유지] */
+/* 탭 영역을 감싸는 부모 (페이드 효과 고정용) */
+.tabs-wrapper {
+    position: relative;
+    max-width: 500px;
+    margin: 20px auto 0;
+    overflow: hidden;
+    /* 하단 report-card와 자연스럽게 이어지도록 배경색 통일 */
+    background-color: #111; 
+}
+
+#loadingView {
+    display: none; /* 기본은 숨김 */
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: fixed; /* 화면에 고정 */
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(0, 0, 0, 0.8); /* 배경을 어둡게 해서 집중도 향상 */
+    z-index: 1000;
+}
+
+.tabs-container {
+    gap: 12px !important;
+    padding: 10px 0;
+    display: flex;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-right: 60px; /* 마지막 버튼이 가려지지 않게 여유 확보 */
+    -webkit-overflow-scrolling: touch;
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+
+/* 크롬, 사파리, 최신 브라우저용 스크롤바 숨기기 */
+.tabs-container::-webkit-scrollbar {
+    display: none;
+}
+
+/* 선이 남지 않도록 완벽하게 덮는 오버레이 */
+.fade-overlay {
+    position: absolute;
+    top: 0;
+    right: -2px; /* 살짝 더 오른쪽으로 밀어서 브라우저 렌더링 오차 방지 */
+    width: 60px;
+    height: 100%;
+    /* 111 배경색과 소수점까지 일치하도록 처리 */
+    background: linear-gradient(to right, 
+        rgba(17, 17, 17, 0) 0%, 
+        rgba(17, 17, 17, 0.9) 70%, 
+        rgba(17, 17, 17, 1) 100%
+    );
+    pointer-events: none;
+    z-index: 100; /* 모든 요소 위에 배치 */
+}
+
+    /* [추가] 달력 하단 프리뷰 스타일 */
+    .day-preview {
+        max-width: 500px;
+        margin: 10px auto;
+        padding: 10px;
+        background: #1a1f1c; 
+        border-radius: 18px;
+        border: 1px solid rgba(46, 213, 115, 0.1);
+        min-height: 50px;
+        text-align: left;
+        /* 📍 아래 3줄이 텍스트를 정중앙으로 보내줍니다 */
+        display: flex; 
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .preview-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+        padding: 8px;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 8px;
+    }
+
+    .preview-item:active {
+    background: rgba(46, 213, 115, 0.1);
+    transform: scale(0.98);
+    }
+
+    .preview-tag {
+        background: #2ed573;
+        color: #111;
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 20px;
+        font-weight: bold;
+    }
+
+    .tab-btn {
+    border-radius: 12px; /* 위쪽만 살짝 둥글게 */
+    background: #222;
+    border: none;
+    padding: 10px;
+}
+    .tab-btn.active { background: #121B15; color: #2ed573; border: 1px solid #121B15; font-weight: 700; z-index: 3; }
+            .chips-container { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 25px; }
+    .set-chip { background: #1a1f1c; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05); /* 경계선 추가 */ box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3); /* 깊이감 부여 */padding: 10px; border-radius: 12px; flex: 0 0 calc(50% - 5px); box-sizing: border-box; display: flex; flex-direction: column; align-items: center; }
+    .set-value { color: #2ed573; font-weight: bold; font-size: 18px; }
+        /* AI 피드백: 달력 프리뷰 스타일 계승 */
+        .feedback-box {
+            background: rgba(255,255,255,0.03) !important;
+            border-left: 3px solid #2ed573; /* 포인트만 살림 */
+            padding: 15px !important;
+            line-height: 1.8;
+            letter-spacing: -0.01em;    /* 자간 미세하게 축소 */
+            font-size: 14px;
+    }
+    .calendar-wrapper { max-width: 500px; margin: 0 auto; position: relative; overflow: hidden; padding-bottom: 10px; }
+    .calendar-header { display: flex; justify-content: space-between; align-items: center; padding: 10px; }
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+    .calendar-day { aspect-ratio: 1/1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 10px; background: #222; cursor: pointer; font-size: 13px; }
+    .calendar-day.active { background: #121B15; border: 1px solid #2ed573; }
+    .day-names { display: grid; grid-template-columns: repeat(7, 1fr); color: #666; font-size: 12px; margin-bottom: 5px; }
+    .report-card {
+        background: #111 !important; /* 배경색 통일 */
+        border: none !important;     /* 과한 테두리 삭제 */
+        padding: 10px 0;             /* 좌우 여백을 빼서 달력과 폭을 맞춤 */
+    }
+    .loader { border: 6px solid #333; border-top: 6px solid #2ed573; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 30px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+</div>
+
+<script>
+function testLoadingUI() {
+    // 1. 모든 뷰 숨기고 로딩 뷰 표시
+    document.getElementById('loginArea').style.display = 'none';
+    document.getElementById('mainMenuView').style.display = 'none';
+    const loadingView = document.getElementById('loadingView');
+    loadingView.style.display = 'flex'; // 혹은 'block'
+
+    // 2. 텍스트 변경 테스트
+    const messages = [
+        "📥 서버에 영상 수신 완료...",
+        "⚙️ AI 분석을 위해 영상 최적화 중...",
+        "☁️ AI 서버로 영상 전송 중...",
+        "🤖 AI가 영상을 읽고 있습니다...",
+        "🧐 자세 분석 및 운동 횟수 기록 중..."
+    ];
+
+    let i = 0;
+    const interval = setInterval(() => {
+        if (i < messages.length) {
+            // 위 답변에서 수정한대로 id="loadingText"가 있어야 작동합니다.
+            const txt = document.getElementById('loadingText');
+            if(txt) txt.innerText = messages[i];
+            i++;
+        } else {
+            clearInterval(interval);
+            alert("테스트 완료! 화면을 새로고침하세요.");
+        }
+    }, 1500); // 1.5초 간격으로 텍스트 변경
+}
+</script>
+
+    <div class="login-section" id="loginArea">
+        <h1 style="color: #2ed573; margin-bottom: 22px;">LET'S WORK</h1>
+        <div id="userInfo" class="user-info">운동을 기록하려면 로그인이 필요합니다.</div>
+        <div id="g_id_onload"
+             data-client_id="432545887591-qmuctqe2v3nd1355mvfegp4uk9d0gbs8.apps.googleusercontent.com" 
+             data-callback="handleCredentialResponse">
+        </div>
+        <div class="g_id_signin"
+     data-type="standard"
+     data-shape="pill"       data-theme="outline"    data-size="large"       data-text="signin_with" data-width="250">       </div>
+    </div>
+
+    <div id="mainMenuView">
+        <div class="btn-group" style="flex-direction: column; width: 80%; max-width: 300px; margin: 0 auto;">
+            <button id="startReadyBtn" class="main-btn" style="background: #ff4757; color: white; margin-bottom: 15px;">🔥 운동 시작</button>
+            <button id="historyBtn" class="main-btn" style="background: #2ed573; color: white;">📜 기록 확인</button>
+            <button onclick="logout()" style="background:none; border:none; color:#666; margin-top:20px; cursor:pointer; text-decoration:underline;">로그아웃</button>
+        </div>
+    </div>
+
+    <div id="cameraView">
+        <video id="preview" autoplay muted playsinline></video>
+        <div class="btn-group">
+            <button id="recordBtn" class="main-btn" style="background: #ff4757; color: white;">🔴 녹화 시작</button>
+            <button id="stopBtn" class="main-btn" style="background: #2f3542; color: white; display: none;">⏹️ 촬영 완료</button>
+            <button onclick="location.reload()" class="main-btn" style="background: #444; color: white;">취소</button>
+        </div>
+    </div>
+
+    <div id="loadingView">
+        <div class="loader"></div>
+        <h2 id="loadingText" style="color: #2ed573; margin-top: 20px;">🚀 영상 데이터를 서버로 옮기는 중....</h2>
+    </div> <div id="resultView"></div>
+    <div id="historyView">
+        <h2 style="color: #2ed573;">📅 나의 운동 기록</h2>
+        <div id="historyList"></div>
+
+        <div id="dayPreview" class="day-preview">
+            <p style="color: #666; font-size: 13px; text-align: center;">날짜를 선택하면 운동 요약이 표시됩니다.</p>
+        </div>
+    
+        <button onclick="location.reload()" class="main-btn" style="background: #444; color: white; margin-top: 20px;">홈으로</button>
+    </div>
+
+    <script>
+        let mediaRecorder, recordedChunks = [], workoutResults = [], userProfile = null, idToken = null;
+        let viewMode = "new"; // 추가
+        let currentIndex = 0; // 추가
+        const videoElement = document.getElementById('preview');
+
+        // [3번] 기존 window.onload 수정
+        window.onload = () => {
+            const saved = localStorage.getItem("userProfile");
+            const savedToken = localStorage.getItem("idToken");
+            if (saved && savedToken) {
+                userProfile = JSON.parse(saved);
+                idToken = savedToken;
+                showMainMenu();
+                startTokenRefreshLoop(); // 👈 접속 시 루프 시작
+            }
+        };
+
+        // [3번] 기존 handleCredentialResponse 수정
+        function handleCredentialResponse(response) {
+            console.log("🔑 새 토큰 수신 완료");
+            idToken = response.credential; // 📍 전역 변수 최신화
+            const payload = parseJwtPayload(idToken);
+            userProfile = { id: payload.sub, name: payload.name };
+            
+            localStorage.setItem("userProfile", JSON.stringify(userProfile));
+            localStorage.setItem("idToken", idToken);
+            
+            showMainMenu();
+            startTokenRefreshLoop(); // 👈 로그인 성공 시 루프 시작
+        }
+
+        // [로그인 후 UI 전환]
+        function showMainMenu() {
+            document.querySelector(".g_id_signin").style.display = "none";
+            document.getElementById("userInfo").innerText = `👋 반갑습니다, ${userProfile.name}님!`;
+            document.getElementById("mainMenuView").style.display = "block";
+        }
+
+        function logout() {
+            localStorage.clear();
+            location.reload();
+        }
+
+        // [1번] 모든 fetch 응답을 검사하는 공통 함수
+        async function handleResponse(res) {
+            if (res.status === 401) {
+                alert("보안 세션이 만료되었습니다. 다시 로그인해주세요.");
+                logout(); // 세션 만료 시 로컬 스토리지 비우고 새로고침
+                return null;
+            }
+            if (!res.ok) throw new Error("서버 응답 오류");
+            return res.json();
+        }
+
+        // [2번] 50분마다 토큰을 자동 갱신하는 함수
+        function startTokenRefreshLoop() {
+            if (window.tokenRefreshInterval) clearInterval(window.tokenRefreshInterval);
+
+            window.tokenRefreshInterval = setInterval(() => {
+                if (idToken) {
+                    console.log("🔄 세션 만료 방지를 위해 토큰 자동 갱신 중...");
+                    // 조용히 구글 서버에 새 토큰을 요청 (handleCredentialResponse가 다시 실행됨)
+                    google.accounts.id.prompt();
+                }
+            }, 50 * 60 * 1000); // 50분마다 실행
+        }
+
+        // [카메라 제어]
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "user", width: 640, height: 480, frameRate: 15 }, 
+                    audio: false 
+                });
+                videoElement.srcObject = stream;
+                document.getElementById('mainMenuView').style.display = 'none';
+                document.getElementById('loginArea').style.display = 'none';
+                document.getElementById('cameraView').style.display = 'block';
+            } catch (err) {
+                alert("카메라 권한이 필요합니다.");
+            }
+        }
+
+        document.getElementById('startReadyBtn').onclick = startCamera;
+
+        // [녹화 로직 - 기존과 동일하되 refreshGoogleToken 포함]
+        document.getElementById('recordBtn').onclick = () => {
+            refreshGoogleToken();
+            recordedChunks = [];
+            mediaRecorder = new MediaRecorder(videoElement.srcObject);
+            mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+            mediaRecorder.start();
+            document.getElementById('recordBtn').style.display = 'none';
+            document.getElementById('stopBtn').style.display = 'inline-block';
+        };
+
+        document.getElementById('stopBtn').onclick = () => {
+            refreshGoogleToken();
+            mediaRecorder.stop();
+            document.getElementById('cameraView').style.display = 'none';
+            document.getElementById('loadingView').style.display = 'block';
+
+            mediaRecorder.onstop = async () => {
+                const blob = new Blob(recordedChunks, { type: 'video/mp4' });
+                const formData = new FormData();
+                formData.append('video', blob, 'workout.mp4');
+
+                // UI 전환
+                document.getElementById('cameraView').style.display = 'none';
+                document.getElementById('loadingView').style.display = 'flex';
+                const loadingText = document.getElementById('loadingText');
+
+                try {
+                    const response = await fetch('https://jargonal-flutteringly-sylvester.ngrok-free.dev/analyze', {
+                        method: 'POST',
+                        body: formData,
+                        // ngrok 사용 시 브라우저 경고 창 방지
+                        headers: { 'ngrok-skip-browser-warning': 'true' }
+                    });
+
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+
+                    while (true) {
+                        const { value, done } = await reader.read();
+                        if (done) break;
+
+                        const chunk = decoder.decode(value);
+                        // 서버가 보낸 "data: {...}" 줄을 파싱
+                        const lines = chunk.split('\n');
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                const jsonStr = line.replace('data: ', '');
+                                const payload = JSON.parse(jsonStr);
+
+                                if (payload.status === 'PROGRESS') {
+                                    // ⭐️ 여기가 포인트: 서버에서 보낸 msg로 실시간 교체
+                                    loadingText.innerText = payload.msg;
+                                } else if (payload.status === 'DONE') {
+                                    // 분석 완료
+                                    workoutResults = payload.data;
+                                    document.getElementById('loadingView').style.display = 'none';
+                                    document.getElementById('resultView').style.display = 'block';
+                                    renderReport();
+                                } else if (payload.status === 'ERROR') {
+                                    throw new Error(payload.msg);
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error(e);
+                    alert("분석 실패: " + e.message);
+                    location.reload();
+                }
+            };
+        };
+
+        // [기록 확인 버튼 클릭 시]
+        document.getElementById('historyBtn').onclick = () => {
+            refreshGoogleToken(); // 보안 세션 유지
+            
+            // 1. 메인 메뉴와 로그인 영역을 숨깁니다. (이게 핵심!)
+            document.getElementById('mainMenuView').style.display = 'none';
+            document.getElementById('loginArea').style.display = 'none'; 
+            
+            // 2. 기록 뷰를 보여줍니다.
+            document.getElementById('historyView').style.display = 'block';
+            
+            loadHistory(); // 데이터를 불러옵니다.
+        };
+
+        let currentViewDate = new Date(); // 현재 보고 있는 달력 기준일
+        let historyData = {}; // 날짜별로 그룹화된 데이터 저장소
+
+        // [기록 불러오기 및 그룹화]
+        async function loadHistory() {
+            const listContainer = document.getElementById('historyList');
+            listContainer.innerHTML = "<p>⏳ 기록을 불러오는 중...</p>";
+
+            try {
+                const res = await fetch("https://jargonal-flutteringly-sylvester.ngrok-free.dev/history", {
+                    headers: { "Authorization": `Bearer ${idToken}`,
+                                    // 📍 이 헤더가 ngrok의 HTML 경고창을 건너뛰고 바로 JSON을 받게 해줍니다.
+                            "ngrok-skip-browser-warning": "true"
+                    }
+                });
+
+                // 데이터 파싱 전 응답 확인
+                if (res.status === 401) {
+                    alert("세션이 만료되었습니다.");
+                    logout();
+                    return;
+                }
+                
+                if (!res.ok) throw new Error("서버 응답 실패");
+                const rawData = await res.json();
+                console.log("📥 수신된 원본 데이터:", rawData); // 디버깅용
+
+                historyData = {};
+                if (rawData && Array.isArray(rawData)) {
+                    rawData.forEach(item => {
+                        if (item.date) {
+                            // 양끝 공백 제거 및 순수 날짜만 추출
+                            const dateKey = item.date.trim().substring(0, 10); 
+                            if (!historyData[dateKey]) historyData[dateKey] = [];
+                            historyData[dateKey].push(item);
+                        }
+                    });
+                }
+                console.log("📅 가공된 historyData 키값들:", Object.keys(historyData));
+                renderCalendar();
+
+                // 📍 [추가] 오늘 날짜 자동 선택 로직
+                const todayStr = new Date().toISOString().split('T')[0];
+
+                // 화면에 그려진 오늘 날짜 요소를 찾습니다.
+                const todayElement = document.querySelector(`.calendar-day[onclick*="${todayStr}"]`);
+                if (todayElement) {
+                    // 실제 클릭 이벤트를 발생시켜 프리뷰를 띄웁니다.
+                    selectDate(todayStr, todayElement);
+                } else {
+                    // 만약 이번 달 달력에 오늘이 없다면(다른 달을 보다가 들어온 경우 등) 
+                    // 프리뷰 영역을 초기화하거나 안내 문구를 띄웁니다.
+                    document.getElementById('dayPreview').innerHTML = 
+                        `<p style="color: #666; font-size: 13px; text-align: center; margin: 15px 0;">오늘의 운동 기록이 없습니다. 💪</p>`;
+                }
+            } catch (e) {
+                console.error(e);
+                listContainer.innerHTML = "<p style='color:#ff4757;'>❌ 기록을 불러오지 못했습니다.</p>";
+            }
+        }
+
+        // [달력 렌더링] - 클릭 이벤트에 selectDate 연결
+        function renderCalendar() {
+            const container = document.getElementById('historyList');
+            if (!container) return;
+
+            const year = currentViewDate.getFullYear();
+            const month = currentViewDate.getMonth();
+
+            const firstDay = new Date(year, month, 1).getDay();
+            const lastDate = new Date(year, month + 1, 0).getDate();
+            
+            let calendarHtml = `
+                <div class="calendar-wrapper" id="calWrapper">
+                    <div class="calendar-header">
+                        <button onclick="changeMonth(-1)" style="background:none; border:none; color:white; font-size:18px; cursor:pointer;">◀</button>
+                        <h3 style="margin:0; color:#2ed573;">${year}년 ${month + 1}월</h3>
+                        <button onclick="changeMonth(1)" style="background:none; border:none; color:white; font-size:18px; cursor:pointer;">▶</button>
+                    </div>
+                    <div class="day-names">
+                        <div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div>
+                    </div>
+                    <div class="calendar-grid">`;
+
+            for (let i = 0; i < firstDay; i++) calendarHtml += `<div></div>`;
+
+            const todayStr = new Date().toISOString().split('T')[0];
+            for (let i = 1; i <= lastDate; i++) {
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+                const isToday = todayStr === dateStr ? 'today' : '';
+                const hasData = historyData[dateStr] ? 'active' : '';
+                
+                // 📍 onclick을 showDetail 대신 selectDate로 변경하여 프리뷰 먼저 보여줌
+                calendarHtml += `
+                    <div class="calendar-day ${isToday} ${hasData}" onclick="selectDate('${dateStr}', this)">
+                        <span class="day-num">${i}</span>
+                        ${hasData ? '<div class="exercise-dot" style="width:4px; height:4px; background:#2ed573; border-radius:50%; margin-top:2px;"></div>' : ''}
+                    </div>`;
+            }
+
+            calendarHtml += `</div></div>`;
+            container.innerHTML = calendarHtml;
+            addSwipeEvents();
+        }
+
+        // 📍 [새로 추가] 날짜 선택 시 프리뷰 표시 로직
+        function selectDate(dateStr, element) {
+        // 모든 날짜에서 active 클래스 제거 후 클릭한 날짜만 강조
+        document.querySelectorAll('.calendar-day').forEach(d => {
+            d.style.border = "none";
+            d.style.background = "#222"; // 기본 배경으로 복구
+        });
+        element.style.border = "1px solid #2ed573";
+        element.style.background = "#121B15"; // 선택된 날짜 배경 강조
+
+        const previewContainer = document.getElementById('dayPreview');
+        const logs = historyData[dateStr]; 
+
+        if (logs && logs.length > 0) {
+            const [y, m, d] = dateStr.split('-');
+            let html = `<div style="color: #2ed573; font-size: 13px; margin-bottom: 12px; font-weight: bold;">
+                            📍 ${parseInt(m)}월 ${parseInt(d)}일 운동 요약
+                        </div>`;
+            
+            logs.forEach((log, index) => {
+                // 📍 영역 전체에 onclick 부여 및 스타일 추가
+                html += `
+                    <div class="preview-item" 
+                        onclick="showDetail('${dateStr}')" 
+                        style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; padding:15px; background:rgba(255,255,255,0.05); border-radius:12px; margin-bottom:10px; border: 1px solid rgba(255,255,255,0.1);">
+                        <div style="pointer-events:none;">
+                            <span style="color: #eee; font-size: 15px; font-weight: 500;">${log.summary}</span>
+                        </div>
+                        <span class="preview-tag" style="pointer-events:none;">보러가기 ></span>
+                    </div>`;
+            });
+            previewContainer.innerHTML = html;
+        } else {
+            previewContainer.innerHTML = `<p style="color: #666; font-size: 13px; text-align: center; width: 100%; margin: 0;">이날은 운동 기록이 없습니다. 💪</p>`;
+        }
+    }
+
+        function deleteHistoryItem(dateStr) {
+            if (confirm(`${dateStr}의 모든 기록을 삭제하시겠습니까?`)) {
+                // 1. 로컬 변수에서 삭제
+                delete historyData[dateStr];
+                
+                // 2. LocalStorage 업데이트 (저장 로직이 있는 경우)
+                localStorage.setItem('workoutHistory', JSON.stringify(historyData));
+                
+                // 3. UI 갱신
+                renderCalendar(); // 달력 점(dot) 업데이트
+                document.getElementById('dayPreview').innerHTML = 
+                    `<p style="color: #666; font-size: 13px; text-align: center; margin: 20px 0;">기록이 삭제되었습니다. 🗑️</p>`;
+                
+                console.log(`${dateStr} 기록 삭제 완료`);
+            }
+        }
+
+        // [월 변경 함수]
+        function changeMonth(diff) {
+            currentViewDate.setMonth(currentViewDate.getMonth() + diff);
+            renderCalendar();
+        }
+
+        function refreshGoogleToken() {
+            google.accounts.id.prompt();
+        }
+
+        function parseJwtPayload(credential) {
+            const base64Url = credential.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            
+            // 유니코드(한글)를 제대로 지원하기 위한 디코딩 방식
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+
+            return JSON.parse(jsonPayload);
+        }
+
+        // [상세 리포트 보기]
+        function showDetail(date) {
+            const dayLogs = historyData[date];
+            if (!dayLogs || dayLogs.length === 0) return;
+
+            // 해당 날의 모든 운동 데이터를 통합
+            workoutResults = [];
+            dayLogs.forEach(log => {
+                if (Array.isArray(log.data)) {
+                    workoutResults = workoutResults.concat(log.data);
+                }
+            });
+
+            if (workoutResults.length > 0) {
+                viewMode = "history";
+                currentIndex = 0;
+                document.getElementById('historyView').style.display = 'none';
+                document.getElementById('resultView').style.display = 'block';
+                renderReport();
+            }
+        }
+
+        // [스와이프 감지]
+        let touchStartX = 0;
+        function addSwipeEvents() {
+            const wrapper = document.getElementById('calWrapper');
+            if (!wrapper) return;
+            wrapper.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, {passive: true});
+            wrapper.addEventListener('touchend', e => {
+                const touchEndX = e.changedTouches[0].clientX;
+                const diff = touchStartX - touchEndX;
+                if (Math.abs(diff) > 50) { // 50px 이상 움직였을 때만 작동
+                    changeMonth(diff > 0 ? 1 : -1);
+                }
+            }, {passive: true});
+        }
+
+        function updateButtonStates() {
+            const historyBtn = document.getElementById('historyBtn');
+            
+            if (userProfile && idToken) {
+                // 로그인 된 상태
+                historyBtn.disabled = false;
+                historyBtn.style.background = "#2ed573"; // 원래 색상
+            } else {
+                // 로그인 안 된 상태
+                historyBtn.disabled = true;
+            }
+        }
+
+        // [리포트 렌더링]
+        function renderReport() {
+            const container = document.getElementById('resultView');
+            
+            if (!workoutResults || workoutResults.length === 0) return;
+
+            // 1. 현재 선택된 탭의 데이터 정의 (이 부분이 빠져서 에러가 났었습니다)
+            const current = workoutResults[currentIndex];
+
+            // 2. 날짜 정보 가져오기
+            let currentDateStr = "";
+            let displayDate = "";
+
+            if (viewMode === "history") {
+                // historyData에서 현재 데이터를 포함하는 날짜 키를 찾음
+                currentDateStr = Object.keys(historyData).find(date => 
+                    historyData[date].some(log => JSON.stringify(log.data).includes(current.exercise))
+                );
+                displayDate = currentDateStr || "이전 기록";
+            } else {
+                // 방금 촬영한 데이터인 경우 오늘 날짜
+                currentDateStr = new Date().toISOString().split('T')[0];
+                displayDate = "오늘";
+            }
+
+            // 3. 탭 버튼 생성
+            const tabs = workoutResults.map((item, idx) => `
+                <div class="tab-btn ${idx === currentIndex ? 'active' : ''}" 
+                    onclick="switchTab(${idx})" 
+                    style="
+                        display: flex; 
+                        align-items: center; 
+                        justify-content: center; 
+                        min-width: 90px; 
+                        min-height: 44px;
+                        padding: 5px 15px;
+                        text-align: center;
+                        word-break: keep-all;
+                        line-height: 1.2;
+                        cursor: pointer;
+                    ">
+                    ${item.exercise}
+                </div>
+            `).join('');
+
+            // 4. 세트 기록 리스트 생성
+            const setsList = (current.sets_data || []).map((val, i) => `
+                <div style="display: flex; justify-content: space-between; align-items: center; 
+                            padding: 12px 16px; background: rgba(255,255,255,0.05); 
+                            border-radius: 10px; margin-bottom: 8px;">
+                    <span style="color: #888; font-size: 13px;">${i+1}세트</span>
+                    <span style="color: #2ed573; font-weight: bold; font-size: 16px;">${val}${current.unit || '회'}</span>
+                </div>
+            `).join('');
+
+            // 5. 최종 HTML 삽입 (버튼 부분 집중 수정)
+            container.innerHTML = `
+                <div style="text-align: left; padding: 0 10px; margin-top: 20px;">
+                    <h2 style="color: #2ed573; margin-bottom: 4px; font-size: 22px;">📊 AI 운동 리포트</h2>
+                    <div style="font-size: 13px; color: #666;">${displayDate} 운동 기록</div>
+                </div>
+
+                <div class="tabs-wrapper" style="margin: 20px 0;">
+                    <div class="tabs-container" style="display: flex; gap: 10px; overflow-x: auto; padding: 0 10px;">
+                        ${tabs}
+                    </div>
+                </div>
+
+                <div class="report-card" style="padding: 0 10px;">
+                    <div style="margin-bottom: 25px;">
+                        <div style="font-size: 11px; color: #444; margin-bottom: 12px; font-weight: bold; letter-spacing: 1px;">SETS DATA</div>
+                        ${setsList}
+                    </div>
+                    
+                    <div class="feedback-box" style="text-align: left; background: #1a1f1c; padding: 20px; border-radius: 12px; border-left: 4px solid #2ed573;">
+                        <div style="color: #2ed573; font-size: 11px; font-weight: bold; margin-bottom: 10px; letter-spacing: 1px;">AI ANALYSIS</div>
+                        <div style="line-height: 1.8; color: #ccc; font-size: 14px; word-break: keep-all;">
+                            ${current.feedback || "분석 데이터를 찾을 수 없습니다."}
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 30px; padding-bottom: 40px;">
+                        ${viewMode === 'history' ? `
+                            <button onclick="goBackToHistory()" class="main-btn" style="width: 100%; height: 54px; border-radius: 12px; background: #2ed573; color: #000; font-weight: bold; border: none; font-size: 16px; margin-bottom: 15px;">
+                                ⬅️ 기록 목록으로 돌아가기
+                            </button>
+                            <div style="text-align: center; margin-top: 20px;">
+                                <span onclick="deleteAndGoBack('${currentDateStr}')" 
+                                    style="color: #555; font-size: 13px; text-decoration: underline; cursor: pointer;">
+                                    이날의 기록 전체 삭제하기
+                                </span>
+                            </div>
+                        ` : `
+                            <button id="saveBtn" onclick="saveData()" class="main-btn" style="width: 100%; height: 54px; border-radius: 12px; background: #444; color: white; font-weight: bold; border: none; font-size: 16px; margin-bottom: 15px;">
+                                💾 서버에 기록 저장하기
+                            </button>
+                            <button onclick="goBackToHistory()" class="main-btn" style="width: 100%; height: 54px; border-radius: 12px; background: #2ed573; color: #000; font-weight: bold; border: none; font-size: 16px;">
+                                기록 목록으로
+                            </button>
+                        `}
+                    </div>
+                </div>`;
+        }
+
+        async function deleteAndGoBack(dateStr) {
+            if (!dateStr || dateStr === "undefined") {
+                alert("삭제할 날짜 정보가 명확하지 않습니다.");
+                return;
+            }
+
+            if (confirm(`${dateStr}의 모든 기록을 삭제하시겠어요?`)) {
+                try {
+                    // 1. 서버(DB) 삭제 요청
+                    const response = await fetch(`https://jargonal-flutteringly-sylvester.ngrok-free.dev/delete_by_date?date=${dateStr}`, {
+                        method: 'DELETE',
+                        headers: { 
+                            "Authorization": `Bearer ${idToken}` 
+                        }
+                    });
+
+                    if (response.ok) {
+                        // 2. 로컬 데이터(메모리)에서 즉시 삭제
+                        delete historyData[dateStr];
+                        
+                        // 3. UI 즉시 갱신 (달력의 점 표시 업데이트)
+                        renderCalendar(); 
+
+                        // 📍 [핵심 추가] 프리뷰 영역을 초기 상태로 리셋
+                        const previewContainer = document.getElementById('dayPreview');
+                        if (previewContainer) {
+                            previewContainer.innerHTML = `<p style="color: #666; font-size: 13px; text-align: center;">날짜를 선택하면 운동 요약이 표시됩니다.</p>`;
+                        }
+                        goBackToHistory(); // 목록 화면으로 이동
+                    } else {
+                        throw new Error("서버 삭제 실패");
+                    }
+                } catch (e) {
+                    console.error("삭제 중 에러:", e);
+                    alert("서버 연결에 실패했습니다. 나중에 다시 시도해주세요.");
+                }
+            }
+        }
+
+        function switchTab(idx) { currentIndex = idx; renderReport(); }
+
+        async function goBackToHistory() {
+            console.log("--- [DEBUG] goBackToHistory 실행 시작 ---");
+
+            const loadingView = document.getElementById('loadingView');
+            const resultView = document.getElementById('resultView');
+            const historyView = document.getElementById('historyView');
+
+            // 1. 뷰 전환
+            if (loadingView) loadingView.style.display = 'none'; 
+            if (resultView) resultView.style.display = 'none'; 
+            if (historyView) historyView.style.display = 'block';
+
+            // 2. [핵심] 서버에서 최신 데이터를 다시 불러옵니다.
+            // loadHistory 내부에 renderCalendar()와 오늘 날짜 선택 로직이 이미 포함되어 있습니다.
+            if (typeof loadHistory === "function") {
+                console.log("🔄 서버에서 최신 기록을 가져오는 중...");
+                await loadHistory(); 
+            }
+
+            console.log("--- [DEBUG] goBackToHistory 실행 종료 ---");
+        }
+
+        // 함수 밖 상단에 상태 관리 변수 추가
+        let isGuiding = false;
+        let isUploading = false;
+        let isSaved = false;
+
+        async function saveData() {
+            refreshGoogleToken();
+            const btn = document.getElementById('saveBtn');
+            
+            // 이미 처리 중이거나 저장 완료된 경우 중복 클릭 방지
+            if (isGuiding || isUploading || isSaved) return;
+
+            // 1. 로그인 체크 및 유도 로직
+            if (!userProfile || !idToken) {
+                isGuiding = true;
+                const originalText = btn.innerText;
+                btn.innerText = "⚠️ 로그인을 먼저 해주세요";
+                btn.style.color = "#ff4757"; // 붉은색으로 강조
+                
+                setTimeout(() => {
+                    btn.innerText = originalText;
+                    btn.style.color = "white";
+                    isGuiding = false;
+                }, 2000);
+                return;
+            }
+
+            // 2. 실제 서버 저장 로직
+            try {
+                isUploading = true;
+                btn.innerText = "⏳ 저장 중...";
+                
+                const summary = workoutResults.length > 1 
+                    ? `${workoutResults[0].exercise} 외 ${workoutResults.length - 1}종` 
+                    : `${workoutResults[0].exercise}`;
+
+                const res = await fetch('https://jargonal-flutteringly-sylvester.ngrok-free.dev/save', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${idToken}` // 백엔드 검증용 토큰
+                    },
+                    body: JSON.stringify({ 
+                        summary: summary, 
+                        data: workoutResults 
+                    })
+                });
+
+                const data = await handleResponse(res); // 📍 401 에러 체크 적용
+                if (res.ok) { 
+                    isSaved = true; 
+                    btn.innerText = "✅ 저장 완료!";
+                    btn.style.background = "#555"; // 비활성화 느낌의 배경색
+                    btn.style.color = "white";      // 글자색 고정
+                    btn.disabled = true;            // 버튼 비활성화 (클릭 불가)
+                }
+
+            } catch (e) {
+                console.error(e);
+                btn.innerText = "❌ 저장 실패";
+                btn.style.color = "#ff4757";
+                setTimeout(() => {
+                    btn.innerText = "💾 다시 저장 시도";
+                    btn.style.color = "white";
+                    renderReport();
+                }, 2000);
+            } finally { 
+                isUploading = false; 
+            }
+        }
+    </script>
+</body>
+</html>
