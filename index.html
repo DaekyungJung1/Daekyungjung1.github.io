@@ -442,8 +442,8 @@ function testLoadingUI() {
 
             // 📍 UI 변경: 상단 텍스트 및 효과
             const statusText = document.getElementById('recordingStatus');
-            statusText.innerHTML = '<span class="recording-dot"></span> 녹화 중';
-            statusText.style.color = "#ff4757"; // 녹화 중엔 빨간색으로 변경
+            statusText.innerHTML = '<span class="recording-dot"></span> 운동 중';
+            statusText.style.color = "#2ed573"; // 녹화 중엔 녹색으로 변경
             
             recordedChunks = [];
             mediaRecorder = new MediaRecorder(videoElement.srcObject);
@@ -1004,6 +1004,7 @@ function testLoadingUI() {
     </script>
 </body>
 </html>
+
 
 
 
